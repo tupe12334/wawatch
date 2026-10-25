@@ -33,12 +33,30 @@ export function messageText(msg: WAMessage): string | undefined {
   return `[${type.replace(/Message$/, '')}]`;
 }
 
+const BACKOFF_START_MS = 2000;
+const BACKOFF_MAX_MS = 60_000;
+const LISTENED_EVENTS = [
+  'creds.update',
+  'connection.update',
+  'messaging-history.set',
+  'chats.upsert',
+  'contacts.upsert',
+  'groups.update',
+  'messages.upsert',
+] as const;
+
+/** Next reconnect delay: doubles, capped at 60 s. */
+export function nextBackoff(ms: number): number {
+  return Math.min(ms * 2, BACKOFF_MAX_MS);
+}
+
 /** Real WhatsApp connection as a linked device, through Baileys. */
 export class BaileysTransport implements Transport {
   private sock?: WASocket;
   private sink?: TransportSink;
   private ownIds = new Set<string>();
   private stopped = false;
+  private backoff = BACKOFF_START_MS;
   private logger = pino({ level: process.env.WAWATCH_DEBUG ? 'debug' : 'silent' });
 
   constructor(private dataDir: string) {}
@@ -48,8 +66,24 @@ export class BaileysTransport implements Transport {
     await this.connect();
   }
 
+  private scheduleReconnect(reason: string) {
+    if (this.stopped) return;
+    const delay = this.backoff;
+    this.backoff = nextBackoff(delay);
+    console.error(`${reason}; reconnecting in ${delay / 1000}s`);
+    setTimeout(() => {
+      if (!this.stopped) this.connect().catch((e) => this.scheduleReconnect(`connect failed: ${String(e)}`));
+    }, delay);
+  }
+
   private async connect() {
     const { state, saveCreds } = await useMultiFileAuthState(join(this.dataDir, 'auth'));
+    const old = this.sock;
+    if (old) {
+      for (const event of LISTENED_EVENTS) old.ev.removeAllListeners(event);
+      old.end(undefined);
+    }
+    let qrShown = false;
     const sock = makeWASocket({
       auth: state,
       logger: this.logger,
@@ -64,10 +98,16 @@ export class BaileysTransport implements Transport {
     sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       if (qr) {
         sink.status('qr', qr);
-        console.log('Scan this QR in WhatsApp > Linked devices (or open the web UI):');
-        console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
+        if (qrShown) {
+          console.log('QR refreshed, see the web UI');
+        } else {
+          qrShown = true;
+          console.log('Scan this QR in WhatsApp > Linked devices (or open the web UI):');
+          console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
+        }
       }
       if (connection === 'open') {
+        this.backoff = BACKOFF_START_MS;
         sink.status('open');
         const groups = await sock.groupFetchAllParticipating().catch(() => ({}));
         sink.chats(Object.values(groups).map((g) => ({ id: g.id, name: g.subject })));
@@ -77,8 +117,8 @@ export class BaileysTransport implements Transport {
         sink.status('closed');
         if (code === DisconnectReason.loggedOut) {
           console.error(`WhatsApp logged this device out. Delete ${join(this.dataDir, 'auth')} and restart to pair again.`);
-        } else if (!this.stopped) {
-          setTimeout(() => void this.connect(), 2000);
+        } else {
+          this.scheduleReconnect(`WhatsApp connection closed (status ${code})`);
         }
       }
     });

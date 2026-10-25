@@ -1,8 +1,16 @@
 import type { WAMessage } from 'baileys';
 import { describe, expect, it } from 'vitest';
-import { messageText } from '../src/baileys.js';
+import { messageText, nextBackoff } from '../src/baileys.js';
 
 const msg = (message: WAMessage['message']) => ({ key: { id: 'x', remoteJid: '1@s.whatsapp.net' }, message }) as WAMessage;
+
+describe('nextBackoff', () => {
+  it('doubles the reconnect delay and caps it at 60 s', () => {
+    expect(nextBackoff(2000)).toBe(4000);
+    expect(nextBackoff(32000)).toBe(60000);
+    expect(nextBackoff(60000)).toBe(60000);
+  });
+});
 
 describe('messageText', () => {
   it('reads plain, extended and caption text', () => {
