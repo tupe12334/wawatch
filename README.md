@@ -57,6 +57,7 @@ To try the UI and tools without WhatsApp, run `node dist/cli.js --demo` (fake ch
 | `--port` | `WAWATCH_PORT` | `4747` |
 | `--data` | `WAWATCH_DATA` | `~/.wawatch` |
 | `--signature` | `WAWATCH_SIGNATURE` | `🤖 ` |
+| `--max-messages` | `WAWATCH_MAX_MESSAGES` | `5000` |
 | `--webhook` | `WAWATCH_WEBHOOK_URL` | off |
 | | `WAWATCH_WEBHOOK_SECRET` | off |
 | `--demo` | | off |

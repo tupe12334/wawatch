@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -77,5 +77,37 @@ describe('Hub', () => {
     expect(second.hub.getChat('222@s.whatsapp.net')).toMatchObject({ watched: true, mayReply: true });
     expect(second.hub.read().map((m) => m.text)).toEqual(['kept']);
     expect(second.hub.cursor).toBeGreaterThanOrEqual(1);
+  });
+
+  it('caps stored messages after many appends and keeps an old cursor valid', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wawatch-'));
+    const transport = new MockTransport();
+    const hub = new Hub({ transport, signature: '🤖 ', dataDir: dir, maxMessages: 10 });
+    await hub.start();
+    hub.setPermissions('111@s.whatsapp.net', { watched: true });
+    for (let i = 1; i <= 3; i++) transport.inject({ chatId: '111@s.whatsapp.net', text: `m${i}` });
+    const cursor = hub.cursor; // taken before the first compaction (at append 500)
+    for (let i = 4; i <= 603; i++) transport.inject({ chatId: '111@s.whatsapp.net', text: `m${i}` });
+
+    expect(hub.read({ limit: 1000 })).toHaveLength(10);
+    const newer = hub.read({ since: cursor, limit: 1000 });
+    expect(newer.map((m) => m.seq)).toEqual(Array.from({ length: 10 }, (_, i) => 594 + i));
+
+    // A restart reloads the compacted file, which must hold only the newest 10 lines.
+    const reopened = new Hub({ transport: new MockTransport(), dataDir: dir, maxMessages: 10 });
+    const lines = readFileSync(join(dir, 'messages.jsonl'), 'utf8').split('\n').filter(Boolean);
+    expect(lines).toHaveLength(10);
+    expect(reopened.read({ since: cursor, limit: 1000 }).map((m) => m.seq)).toEqual(newer.map((m) => m.seq));
+    expect(reopened.cursor).toBe(603);
+  });
+
+  it('trims the stored log to the cap on load', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wawatch-'));
+    const first = await setup(dir);
+    first.hub.setPermissions('111@s.whatsapp.net', { watched: true });
+    for (let i = 1; i <= 25; i++) first.transport.inject({ chatId: '111@s.whatsapp.net', text: `m${i}` });
+    const second = new Hub({ transport: new MockTransport(), dataDir: dir, maxMessages: 10 });
+    expect(second.read({ limit: 1000 }).map((m) => m.text)).toEqual(Array.from({ length: 10 }, (_, i) => `m${16 + i}`));
+    expect(readFileSync(join(dir, 'messages.jsonl'), 'utf8').split('\n').filter(Boolean)).toHaveLength(10);
   });
 });

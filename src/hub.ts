@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ChatRef, IncomingMessage, LinkStatus, Transport, TransportSink } from './types.js';
 
@@ -25,12 +25,16 @@ export interface HubOptions {
   dataDir?: string;
   /** Prefix added to every message the agent sends. */
   signature?: string;
+  /** Newest messages kept in memory and in messages.jsonl. Default 5000. */
+  maxMessages?: number;
 }
 
 const DEFAULT_SIGNATURE = '🤖 ';
 
-const MAX_MESSAGES = 5000;
+const DEFAULT_MAX_MESSAGES = 5000;
 const MAX_TEXT = 4096;
+/** Appends between checks of the file size, so compaction does not run on every write. */
+const COMPACT_EVERY = 500;
 
 /**
  * Holds chat permissions and the message log, and enforces the safety rules:
@@ -47,6 +51,10 @@ export class Hub extends EventEmitter implements TransportSink {
   private dataDir?: string;
   /** Set only after the user edits the signature in the UI; wins over the CLI value on start. */
   private savedSignature?: string;
+  private maxMessages = DEFAULT_MAX_MESSAGES;
+  /** Lines in messages.jsonl, as far as this process knows. */
+  private fileLines = 0;
+  private appendsSinceCompact = 0;
 
   constructor(opts: HubOptions) {
     super();
@@ -54,6 +62,7 @@ export class Hub extends EventEmitter implements TransportSink {
     this.transport = opts.transport;
     // A blank --signature or WAWATCH_SIGNATURE would send replies without the AI notice.
     this.signature = opts.signature?.trim() ? opts.signature : DEFAULT_SIGNATURE;
+    this.maxMessages = opts.maxMessages ?? DEFAULT_MAX_MESSAGES;
     this.dataDir = opts.dataDir;
     if (this.dataDir) this.load(this.dataDir);
   }
@@ -207,10 +216,16 @@ export class Hub extends EventEmitter implements TransportSink {
     chat.lastMessageAt = Math.max(chat.lastMessageAt ?? 0, m.timestamp);
     const msg: Message = { ...m, seq: ++this.seq, chatName: chat.name, fromAgent };
     this.log.push(msg);
-    if (this.log.length > MAX_MESSAGES) this.log.splice(0, this.log.length - MAX_MESSAGES);
+    if (this.log.length > this.maxMessages) this.log.splice(0, this.log.length - this.maxMessages);
     // Only watched chats and agent messages reach the disk.
     if (this.dataDir && (chat.watched || fromAgent)) {
-      appendFileSync(join(this.dataDir, 'messages.jsonl'), JSON.stringify(msg) + '\n');
+      const file = join(this.dataDir, 'messages.jsonl');
+      appendFileSync(file, JSON.stringify(msg) + '\n');
+      this.fileLines++;
+      if (++this.appendsSinceCompact >= COMPACT_EVERY) {
+        this.appendsSinceCompact = 0;
+        if (this.fileLines > this.maxMessages) this.compact(file);
+      }
     }
     this.emit('message', msg);
     return msg;
@@ -226,15 +241,25 @@ export class Hub extends EventEmitter implements TransportSink {
     }
     const messages = join(dir, 'messages.jsonl');
     if (existsSync(messages)) {
-      // shortcut: reads the whole file on start; rotate it if it grows past a few MB.
-      for (const line of readFileSync(messages, 'utf8').split('\n')) {
-        if (!line) continue;
+      const lines = readFileSync(messages, 'utf8').split('\n').filter(Boolean);
+      for (const line of lines) {
         const m = JSON.parse(line) as Message;
         this.log.push(m);
         this.seq = Math.max(this.seq, m.seq);
       }
-      if (this.log.length > MAX_MESSAGES) this.log.splice(0, this.log.length - MAX_MESSAGES);
+      this.fileLines = lines.length;
+      if (this.log.length > this.maxMessages) this.log.splice(0, this.log.length - this.maxMessages);
+      if (lines.length > this.maxMessages) this.compact(messages);
     }
+  }
+
+  /** Keeps the newest maxMessages lines. Writes a temp file, then renames it over the original. */
+  private compact(file: string) {
+    const kept = readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-this.maxMessages);
+    const tmp = `${file}.tmp`;
+    writeFileSync(tmp, kept.map((line) => line + '\n').join(''));
+    renameSync(tmp, file);
+    this.fileLines = kept.length;
   }
 
   private save() {
