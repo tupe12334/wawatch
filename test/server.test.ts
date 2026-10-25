@@ -60,6 +60,20 @@ describe('MCP server', () => {
   });
 });
 
+describe('MCP instructions', () => {
+  it('sends the agent loop in the initialize result', async () => {
+    const { base } = await setup();
+    const client = new Client({ name: 'test', version: '0' });
+    await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp')));
+    const instructions = client.getInstructions() ?? '';
+    expect(instructions).toContain('Call status first');
+    expect(instructions).toContain("status is not 'open'");
+    expect(instructions).toContain('wait_for_message');
+    expect(instructions).toContain('May reply');
+    await client.close();
+  });
+});
+
 describe('HTTP API safety', () => {
   it('rejects non-JSON and foreign-origin writes, and foreign Host headers', async () => {
     const { base } = await setup();

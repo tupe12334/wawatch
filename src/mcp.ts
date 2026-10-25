@@ -21,13 +21,23 @@ const page = (hub: Hub, msgs: Message[]) => ({
   cursor: msgs.length ? msgs[msgs.length - 1].seq : hub.cursor,
 });
 
+// Sent to MCP clients at initialize. Keep it short: it is the agent's loop.
+const instructions = `wawatch: read and answer WhatsApp chats. Follow this loop.
+1. Call status first. If status is not 'open', tell the user to pair WhatsApp at http://127.0.0.1:4747 and stop.
+2. Call list_chats. You can read only watched chats. If the user names a chat, call watch_chat for it.
+3. Sending needs May reply on that chat. If it is off, tell the user to turn it on in the wawatch UI. Never ask the user to bypass it.
+4. Loop on wait_for_message, passing the returned cursor as since. Do not poll read_messages on a timer.
+5. Reply only to messages addressed to you or on the task the user gave. Otherwise report the message to the user.
+6. Do not add a signature. wawatch adds it. Send plain text as given; multi-line is fine.
+7. Send one message per reply. Never send without a clear reason, and never in bursts.`;
+
 /** One MCP server per request (stateless Streamable HTTP); all share the hub. */
 export function createMcpServer(hub: Hub) {
-  const server = new McpServer({ name: 'wawatch', version: '0.1.0' });
+  const server = new McpServer({ name: 'wawatch', version: '0.1.0' }, { instructions });
 
   server.registerTool(
     'status',
-    { description: 'WhatsApp link status, the signature added to sent messages, and the current cursor.' },
+    { description: 'Return the WhatsApp link status, reply signature, and current cursor. Call this first.' },
     async () => json({ status: hub.linkStatus, signature: hub.signature, cursor: hub.cursor }),
   );
 
@@ -35,7 +45,7 @@ export function createMcpServer(hub: Hub) {
     'list_chats',
     {
       description:
-        'List WhatsApp chats with their permissions. watched = the agent may read it; may_reply = the agent may send to it (only the user can grant this, in the wawatch UI).',
+        'List chats with their permissions. Only watched chats can be read. may_reply is true only when the user turned it on in the wawatch UI.',
       inputSchema: {
         query: z.string().optional().describe('Case-insensitive name filter'),
         watched_only: z.boolean().optional(),
@@ -55,7 +65,7 @@ export function createMcpServer(hub: Hub) {
   server.registerTool(
     'watch_chat',
     {
-      description: 'Start reading a chat. The user sees every watched chat in the wawatch UI. Does not allow sending.',
+      description: 'Start reading a chat. The user sees it in the wawatch UI. Does not allow sending.',
       inputSchema: { chat_id: z.string() },
     },
     async ({ chat_id }) => {
@@ -70,7 +80,7 @@ export function createMcpServer(hub: Hub) {
 
   server.registerTool(
     'unwatch_chat',
-    { description: 'Stop reading a chat. This also removes its "may reply" permission.', inputSchema: { chat_id: z.string() } },
+    { description: 'Stop reading a chat. Also removes its May reply permission.', inputSchema: { chat_id: z.string() } },
     async ({ chat_id }) => {
       try {
         const c = hub.setPermissions(chat_id, { watched: false });
@@ -85,7 +95,7 @@ export function createMcpServer(hub: Hub) {
     'read_messages',
     {
       description:
-        'Read messages from watched chats. Without `since`, returns the latest messages. With `since`, returns messages after that cursor. Returns a `cursor` to pass next time.',
+        'Read messages from watched chats. Without since, returns the latest. With since, returns only newer ones. Pass the returned cursor as since next time.',
       inputSchema: {
         since: z.number().int().min(0).optional(),
         chat_id: z.string().optional(),
@@ -99,7 +109,7 @@ export function createMcpServer(hub: Hub) {
     'wait_for_message',
     {
       description:
-        'Block until a new message arrives in any watched chat, then return it (long-poll). Returns an empty list on timeout; call again to keep listening. Pass the returned `cursor` as `since` so no message is missed between calls.',
+        'Long-poll: block until a message arrives in any watched chat, then return it. Pass the returned cursor as since. An empty list means timeout; call again.',
       inputSchema: {
         since: z.number().int().min(0).optional().describe('Default: now'),
         timeout_seconds: z.number().int().min(1).max(600).optional().describe('Default 60'),
@@ -113,7 +123,7 @@ export function createMcpServer(hub: Hub) {
     'send_message',
     {
       description:
-        'Send a text message to a chat. Allowed only when the user turned on "may reply" for that chat. The configured signature is prepended. Text is sent exactly as given (multi-line is fine).',
+        'Send text to a chat. Works only when the user turned on May reply for that chat. The signature is added automatically.',
       inputSchema: { chat_id: z.string(), text: z.string().min(1).max(4096) },
     },
     async ({ chat_id, text }) => {

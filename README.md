@@ -104,6 +104,21 @@ loop:
 
 If your client stops long tool calls early, use a shorter `timeout_seconds` (Claude Code reads the `MCP_TOOL_TIMEOUT` env var, in ms).
 
+### Agent loop recipe
+
+The server sends the full agent rules to MCP clients at connect time. See [`src/mcp.ts`](src/mcp.ts).
+
+Example prompt: *"Use wawatch. Watch 'Family trip' and answer questions about the trip. Wait for new messages in a loop."*
+
+The rules, in plain words:
+
+- Check `status` first. If it is not `open`, pair WhatsApp in the UI.
+- Read only watched chats. Watch a chat only when the user names it.
+- Send only when the user turned on *May reply*. Never ask to bypass it.
+- Wait for messages with `wait_for_message`. Keep the cursor.
+- Reply only to messages for you or the user's task. Report the rest.
+- Send one message per reply, with a clear reason. Never burst.
+
 ## Use with any other agent (webhook + HTTP)
 
 Start with a webhook URL:
