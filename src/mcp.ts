@@ -23,7 +23,7 @@ const page = (hub: Hub, msgs: Message[]) => ({
 
 // Sent to MCP clients at initialize. Keep it short: it is the agent's loop.
 const instructions = `wawatch: read and answer WhatsApp chats. Follow this loop.
-1. Call status first. If status is not 'open', tell the user to pair WhatsApp at http://127.0.0.1:4747 and stop.
+1. Call status first. If status is not 'open', tell the user to pair WhatsApp in the wawatch web UI, at this server's address without \`/mcp\` (default http://127.0.0.1:4747), and stop.
 2. Call list_chats. You can read only watched chats. If the user names a chat, call watch_chat for it.
 3. Sending needs May reply on that chat. If it is off, tell the user to turn it on in the wawatch UI. Never ask the user to bypass it.
 4. Loop on wait_for_message, passing the returned cursor as since. Do not poll read_messages on a timer.
