@@ -180,6 +180,8 @@ npm test
 npm run typecheck
 ```
 
+`scripts/e2e-demo.sh` runs a real headless Claude Code agent against `--demo`. It needs a logged-in `claude` CLI, so CI does not run it.
+
 Tests use a mock transport. They never connect to WhatsApp.
 
 ## License
