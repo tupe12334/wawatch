@@ -137,6 +137,8 @@ X-Wawatch-Signature: sha256=<HMAC-SHA256 of the body with WAWATCH_WEBHOOK_SECRET
 {"event":"message","message":{"cursor":12,"chat_id":"...@g.us","chat":"Family trip","from":"Dana","text":"When is the train?","time":"2026-10-25T08:00:00.000Z"}}
 ```
 
+A delivery that fails on a network error, 5xx or 429 retries up to 3 more times, after 1 s, 4 s and 16 s. Other 4xx responses are not retried.
+
 Reply, and read history, over HTTP:
 
 ```sh

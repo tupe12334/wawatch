@@ -21,7 +21,7 @@ async function listen(handler: RequestListener) {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
-async function setup(opts: { webhookUrl?: string; webhookSecret?: string } = {}) {
+async function setup(opts: { webhookUrl?: string; webhookSecret?: string; webhookRetryDelays?: number[] } = {}) {
   const transport = new MockTransport();
   const hub = new Hub({ transport, signature: '[bot] ' });
   await hub.start();
@@ -180,5 +180,66 @@ describe('webhook', () => {
     await expect.poll(() => received.length).toBe(1);
     expect(JSON.parse(received[0].body).message).toMatchObject({ text: 'hello', chat_id: '111@s.whatsapp.net' });
     expect(received[0].sig).toBe('sha256=' + createHmac('sha256', 's3cret').update(received[0].body).digest('hex'));
+  });
+
+  // Hook answers each attempt with the next status in `statuses`; the last one repeats.
+  async function hookWith(statuses: number[]) {
+    const attempts: { body: string; sig?: string; attempt?: string }[] = [];
+    const url = await listen((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        attempts.push({ body, sig: req.headers['x-wawatch-signature'] as string, attempt: req.headers['x-wawatch-attempt'] as string });
+        res.statusCode = statuses[Math.min(attempts.length - 1, statuses.length - 1)];
+        res.end();
+      });
+    });
+    return { url, attempts };
+  }
+
+  it('retries a 5xx once and delivers with the same body and signature', async () => {
+    const hook = await hookWith([500, 200]);
+    const { hub, transport } = await setup({ webhookUrl: hook.url, webhookSecret: 's3cret', webhookRetryDelays: [1, 1, 1] });
+    hub.setPermissions('111@s.whatsapp.net', { watched: true });
+    transport.inject({ chatId: '111@s.whatsapp.net', text: 'hello' });
+    await expect.poll(() => hook.attempts.length).toBe(2);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(hook.attempts.length).toBe(2);
+    expect(hook.attempts[1].body).toBe(hook.attempts[0].body);
+    expect(hook.attempts[1].sig).toBe(hook.attempts[0].sig);
+    expect(hook.attempts.map((a) => a.attempt)).toEqual(['1', '2']);
+  });
+
+  it('does not retry a 4xx', async () => {
+    const hook = await hookWith([400]);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { hub, transport } = await setup({ webhookUrl: hook.url, webhookRetryDelays: [1, 1, 1] });
+      hub.setPermissions('111@s.whatsapp.net', { watched: true });
+      transport.inject({ chatId: '111@s.whatsapp.net', text: 'hello' });
+      await expect.poll(() => error.mock.calls.length).toBe(1);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(hook.attempts.length).toBe(1);
+      expect(error.mock.calls[0][0]).toContain('after 1 attempt(s): HTTP 400');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('gives up after 4 attempts and logs one line', async () => {
+    const hook = await hookWith([503]);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { hub, transport } = await setup({ webhookUrl: hook.url, webhookRetryDelays: [1, 1, 1] });
+      hub.setPermissions('111@s.whatsapp.net', { watched: true });
+      transport.inject({ chatId: '111@s.whatsapp.net', text: 'hello' });
+      await expect.poll(() => error.mock.calls.length).toBe(1);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(hook.attempts.length).toBe(4);
+      expect(error).toHaveBeenCalledOnce();
+      expect(error.mock.calls[0][0]).toContain('after 4 attempt(s): HTTP 503');
+    } finally {
+      error.mockRestore();
+    }
   });
 });

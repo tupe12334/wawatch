@@ -15,6 +15,8 @@ export interface ServerOptions {
   webhookUrl?: string;
   /** If set, webhook requests carry X-Wawatch-Signature: sha256=<hmac of body>. */
   webhookSecret?: string;
+  /** Waits before each webhook retry. Tests shorten these. */
+  webhookRetryDelays?: number[];
 }
 
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
@@ -32,7 +34,33 @@ function sameOriginWrites(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-export function createApp({ hub, webDir, webhookUrl, webhookSecret }: ServerOptions) {
+/** POSTs one webhook. Retries network errors, 5xx and 429 with backoff; other 4xx give up at once. */
+async function deliverWebhook(url: string, headers: Record<string, string>, body: string, delays: number[]) {
+  for (let attempt = 1; ; attempt++) {
+    let retry = true;
+    let why: string;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { ...headers, 'X-Wawatch-Attempt': String(attempt) },
+        body,
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.ok) return;
+      why = `HTTP ${res.status}`;
+      retry = res.status >= 500 || res.status === 429;
+    } catch (e) {
+      why = (e as Error).message;
+    }
+    if (!retry || attempt > delays.length) {
+      console.error(`Webhook failed after ${attempt} attempt(s): ${why}`);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, delays[attempt - 1]));
+  }
+}
+
+export function createApp({ hub, webDir, webhookUrl, webhookSecret, webhookRetryDelays = [1000, 4000, 16000] }: ServerOptions) {
   const app = createMcpExpressApp({ host: '127.0.0.1' });
   app.use(sameOriginWrites);
 
@@ -138,7 +166,7 @@ export function createApp({ hub, webDir, webhookUrl, webhookSecret }: ServerOpti
       const body = JSON.stringify({ event: 'message', message: messageView(m) });
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (webhookSecret) headers['X-Wawatch-Signature'] = 'sha256=' + createHmac('sha256', webhookSecret).update(body).digest('hex');
-      fetch(webhookUrl, { method: 'POST', headers, body }).catch((e) => console.error('Webhook failed:', e.message));
+      void deliverWebhook(webhookUrl, headers, body, webhookRetryDelays);
     });
   }
 
