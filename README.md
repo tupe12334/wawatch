@@ -184,6 +184,10 @@ npm run typecheck
 
 Tests use a mock transport. They never connect to WhatsApp.
 
+## Related projects
+
+- **[moadim](https://moadim.io/)** — loop engineering: build, schedule and run agent loops, such as the one in [Agent loop recipe](#agent-loop-recipe).
+
 ## License
 
 [MIT](LICENSE)
