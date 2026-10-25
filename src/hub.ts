@@ -37,12 +37,14 @@ const MAX_TEXT = 4096;
 export class Hub extends EventEmitter implements TransportSink {
   linkStatus: LinkStatus = 'starting';
   qr?: string;
-  readonly signature: string;
+  signature: string;
   private chatMap = new Map<string, Chat>();
   private log: Message[] = [];
   private seq = 0;
   private transport: Transport;
   private dataDir?: string;
+  /** Set only after the user edits the signature in the UI; wins over the CLI value on start. */
+  private savedSignature?: string;
 
   constructor(opts: HubOptions) {
     super();
@@ -114,6 +116,15 @@ export class Hub extends EventEmitter implements TransportSink {
     this.save();
     this.emit('state');
     return chat;
+  }
+
+  /** Changes the signature and saves it. Empty text is refused: every agent message must say it is AI. */
+  setSignature(text: string): string {
+    if (!text.trim()) throw new Error('Signature cannot be empty.');
+    this.signature = this.savedSignature = text;
+    this.save();
+    this.emit('state');
+    return text;
   }
 
   // ---- agent actions ----
@@ -200,8 +211,9 @@ export class Hub extends EventEmitter implements TransportSink {
     mkdirSync(dir, { recursive: true });
     const settings = join(dir, 'settings.json');
     if (existsSync(settings)) {
-      const data = JSON.parse(readFileSync(settings, 'utf8')) as { chats: Chat[] };
+      const data = JSON.parse(readFileSync(settings, 'utf8')) as { chats: Chat[]; signature?: string };
       for (const c of data.chats) this.chatMap.set(c.id, { ...c });
+      if (data.signature?.trim()) this.signature = this.savedSignature = data.signature;
     }
     const messages = join(dir, 'messages.jsonl');
     if (existsSync(messages)) {
@@ -220,6 +232,6 @@ export class Hub extends EventEmitter implements TransportSink {
     if (!this.dataDir) return;
     // Persist only chats with a permission, so the file holds no full chat list.
     const chats = [...this.chatMap.values()].filter((c) => c.watched || c.mayReply);
-    writeFileSync(join(this.dataDir, 'settings.json'), JSON.stringify({ chats }, null, 2));
+    writeFileSync(join(this.dataDir, 'settings.json'), JSON.stringify({ chats, signature: this.savedSignature }, null, 2));
   }
 }

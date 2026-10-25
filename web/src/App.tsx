@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -44,6 +44,7 @@ export function App() {
   const [state, setState] = useState<State>();
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string>();
+  const [draft, setDraft] = useState<string>();
 
   const refresh = useCallback(() => {
     fetch('/api/state')
@@ -75,6 +76,18 @@ export function App() {
     refresh();
   };
 
+  const saveSignature = async (e: FormEvent<HTMLFormElement>, value: string) => {
+    e.preventDefault();
+    const r = await fetch('/api/signature', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signature: value }),
+    });
+    if (r.ok) setDraft(undefined);
+    else setError((await r.json()).error);
+    refresh();
+  };
+
   const chats = useMemo(
     () => (state?.chats ?? []).filter((c) => c.name.toLowerCase().includes(query.toLowerCase())),
     [state, query],
@@ -87,6 +100,7 @@ export function App() {
   const watched = state.chats.filter((c) => c.watched).length;
   const mayReply = state.chats.filter((c) => c.mayReply).length;
   const status = STATUS[state.status];
+  const signature = draft ?? state.signature;
 
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-4 p-4 md:p-6">
@@ -120,6 +134,33 @@ export function App() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Reply signature</CardTitle>
+          <CardDescription>Added to the start of every message the agent sends, so people know it is an AI.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(e) => saveSignature(e, signature)}>
+            <Input
+              value={signature}
+              onChange={(e) => setDraft(e.target.value)}
+              aria-label="Reply signature"
+              aria-invalid={!signature.trim() || undefined}
+            />
+            <button
+              type="submit"
+              disabled={!signature.trim()}
+              className="h-8 shrink-0 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/80 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+            >
+              Save
+            </button>
+          </form>
+          <p className="break-words text-sm text-muted-foreground">
+            Agent messages start with: <code className="rounded bg-muted px-1">{state.signature.trim()}</code>
+          </p>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card>

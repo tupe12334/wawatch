@@ -1,8 +1,11 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createHmac } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, request, type RequestListener, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Hub } from '../src/hub.js';
 import { MockTransport } from '../src/mock.js';
@@ -79,6 +82,35 @@ describe('HTTP API safety', () => {
         .end(),
     );
     expect(status).toBe(403);
+  });
+});
+
+describe('reply signature', () => {
+  it('saves a new signature over HTTP, refuses empty ones, and keeps the saved one after restart', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'wawatch-test-'));
+    try {
+      const transport = new MockTransport();
+      const hub = new Hub({ transport, signature: '🤖 ', dataDir });
+      await hub.start();
+      hub.setPermissions('111@s.whatsapp.net', { mayReply: true });
+      const base = await listen(createApp({ hub }) as unknown as RequestListener);
+      const url = base + '/api/signature';
+      const patch = (body: string) => fetch(url, { method: 'PATCH', body, headers: { 'Content-Type': 'application/json' } });
+
+      expect((await patch(JSON.stringify({ signature: '   ' }))).status).toBe(400);
+      expect((await patch(JSON.stringify({ signature: 42 }))).status).toBe(400);
+      expect(hub.signature).toBe('🤖 ');
+
+      expect((await patch(JSON.stringify({ signature: '🧪 ' }))).status).toBe(200);
+      await hub.send('111@s.whatsapp.net', 'hi');
+      expect(transport.sent).toEqual([{ chatId: '111@s.whatsapp.net', text: '🧪 hi' }]);
+
+      // After a restart the saved value wins over the CLI value.
+      const restarted = new Hub({ transport: new MockTransport(), signature: '🤖 ', dataDir });
+      expect(restarted.signature).toBe('🧪 ');
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 });
 

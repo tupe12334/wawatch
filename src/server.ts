@@ -73,6 +73,16 @@ export function createApp({ hub, webDir, webhookUrl, webhookSecret }: ServerOpti
     }
   });
 
+  app.patch('/api/signature', (req, res) => {
+    const { signature } = req.body ?? {};
+    if (typeof signature !== 'string') return res.status(400).json({ error: 'signature must be a string' });
+    try {
+      res.json({ signature: hub.setSignature(signature) });
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message });
+    }
+  });
+
   // For non-MCP agents: read and send over plain HTTP.
   app.get('/api/messages', (req, res) => {
     const since = req.query.since === undefined ? undefined : Number(req.query.since);

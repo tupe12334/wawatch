@@ -28,7 +28,7 @@ Without this, an agent that watches WhatsApp has to drive WhatsApp Web in a brow
 - The agent reads **only watched chats**. It can ask to watch a chat (`watch_chat`), and you see that in the UI at once.
 - The agent sends **only to chats where you turned on *May reply***. Only the UI (or the local HTTP API) can turn it on, not an MCP tool.
 - Every agent message is logged, marked "sent by agent" in the live feed, and starts with the signature.
-- On disk (`~/.wawatch`): the WhatsApp session keys (`auth/`), your permissions (`settings.json`), and messages from watched chats plus agent messages (`messages.jsonl`). Messages from other chats stay in memory only. Treat `auth/` like a password: anyone with it can use your WhatsApp.
+- On disk (`~/.wawatch`): the WhatsApp session keys (`auth/`), your permissions and reply signature (`settings.json`), and messages from watched chats plus agent messages (`messages.jsonl`). Messages from other chats stay in memory only. Treat `auth/` like a password: anyone with it can use your WhatsApp.
 
 ## Quick start
 
@@ -59,7 +59,7 @@ To try the UI and tools without WhatsApp, run `node dist/cli.js --demo` (fake ch
 | | `WAWATCH_WEBHOOK_SECRET` | off |
 | `--demo` | | off |
 
-Example signature: `--signature "🤖 Claude (Ofek's assistant): "`.
+Example signature: `--signature "🤖 Claude (Ofek's assistant): "`. The flag or env sets the first value; once you save a signature in the UI, it is kept in `settings.json` and wins over the flag and env.
 
 To pair again, stop wawatch and delete `~/.wawatch/auth`.
 
