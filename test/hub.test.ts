@@ -13,6 +13,13 @@ async function setup(dataDir?: string) {
 }
 
 describe('Hub', () => {
+  it('uses the default signature when the configured one is blank', async () => {
+    for (const signature of ['', '   ']) {
+      const hub = new Hub({ transport: new MockTransport(), signature });
+      expect(hub.signature).toBe('🤖 ');
+    }
+  });
+
   it('hides messages from chats that are not watched', async () => {
     const { hub, transport } = await setup();
     transport.inject({ chatId: '111@s.whatsapp.net', text: 'secret' });

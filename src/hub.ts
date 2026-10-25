@@ -27,6 +27,8 @@ export interface HubOptions {
   signature?: string;
 }
 
+const DEFAULT_SIGNATURE = '🤖 ';
+
 const MAX_MESSAGES = 5000;
 const MAX_TEXT = 4096;
 
@@ -50,7 +52,8 @@ export class Hub extends EventEmitter implements TransportSink {
     super();
     this.setMaxListeners(0); // one listener per pending wait_for_message call
     this.transport = opts.transport;
-    this.signature = opts.signature ?? '';
+    // A blank --signature or WAWATCH_SIGNATURE would send replies without the AI notice.
+    this.signature = opts.signature?.trim() ? opts.signature : DEFAULT_SIGNATURE;
     this.dataDir = opts.dataDir;
     if (this.dataDir) this.load(this.dataDir);
   }
