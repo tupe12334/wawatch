@@ -1,0 +1,215 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+
+interface Chat {
+  id: string;
+  name: string;
+  watched: boolean;
+  mayReply: boolean;
+}
+
+interface Message {
+  seq: number;
+  chatId: string;
+  chatName: string;
+  sender: string;
+  fromMe: boolean;
+  fromAgent: boolean;
+  text: string;
+  timestamp: number;
+}
+
+interface State {
+  status: 'starting' | 'qr' | 'open' | 'closed';
+  qr?: string;
+  signature: string;
+  webhook: boolean;
+  chats: Chat[];
+  messages: Message[];
+}
+
+const STATUS: Record<State['status'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+  open: { label: 'Connected', variant: 'default' },
+  qr: { label: 'Scan QR code', variant: 'secondary' },
+  starting: { label: 'Connecting…', variant: 'outline' },
+  closed: { label: 'Disconnected', variant: 'destructive' },
+};
+
+const SHOWN_CHATS = 100;
+
+export function App() {
+  const [state, setState] = useState<State>();
+  const [query, setQuery] = useState('');
+  const [error, setError] = useState<string>();
+
+  const refresh = useCallback(() => {
+    fetch('/api/state')
+      .then((r) => r.json())
+      .then(setState)
+      .catch(() => setError('Cannot reach the wawatch service.'));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const events = new EventSource('/api/events');
+    events.addEventListener('state', refresh);
+    events.addEventListener('message', (e) => {
+      const m = JSON.parse((e as MessageEvent).data) as Message;
+      setState((s) => s && { ...s, messages: [...s.messages, m].slice(-200) });
+    });
+    events.onopen = () => setError(undefined);
+    events.onerror = () => setError('Lost connection to the wawatch service. Retrying…');
+    return () => events.close();
+  }, [refresh]);
+
+  const update = async (id: string, patch: Partial<Pick<Chat, 'watched' | 'mayReply'>>) => {
+    const r = await fetch(`/api/chats/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!r.ok) setError((await r.json()).error);
+    refresh();
+  };
+
+  const chats = useMemo(
+    () => (state?.chats ?? []).filter((c) => c.name.toLowerCase().includes(query.toLowerCase())),
+    [state, query],
+  );
+
+  if (!state) {
+    return <main className="p-6 text-muted-foreground">{error ?? 'Loading…'}</main>;
+  }
+
+  const watched = state.chats.filter((c) => c.watched).length;
+  const mayReply = state.chats.filter((c) => c.mayReply).length;
+  const status = STATUS[state.status];
+
+  return (
+    <main className="mx-auto flex max-w-6xl flex-col gap-4 p-4 md:p-6">
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold">wawatch</h1>
+          <p className="text-sm text-muted-foreground">
+            The AI agent reads <strong>{watched}</strong> {watched === 1 ? 'chat' : 'chats'} and may reply in{' '}
+            <strong>{mayReply}</strong>.
+          </p>
+        </div>
+        <Badge variant={status.variant}>{status.label}</Badge>
+      </header>
+
+      {error && (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+
+      {state.status === 'qr' && state.qr && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Link your WhatsApp</CardTitle>
+            <CardDescription>
+              On your phone, open WhatsApp → Settings → Linked devices → Link a device, and scan this code.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <img src={state.qr} alt="WhatsApp pairing QR code" className="size-64 rounded-md border" />
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Chats</CardTitle>
+            <CardDescription>
+              <strong>Watch</strong> lets the agent read a chat. <strong>May reply</strong> lets it send messages there
+              {state.signature ? (
+                <>
+                  , always starting with <code className="rounded bg-muted px-1">{state.signature.trim()}</code>
+                </>
+              ) : null}
+              .
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Input
+              type="search"
+              placeholder="Search chats"
+              aria-label="Search chats"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {chats.length === 0 && <p className="text-sm text-muted-foreground">No chats yet.</p>}
+            <ul className="flex flex-col divide-y">
+              {chats.slice(0, SHOWN_CHATS).map((c) => (
+                <li key={c.id} className="flex items-center gap-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{c.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{c.id.endsWith('@g.us') ? 'Group' : 'Chat'}</p>
+                  </div>
+                  <label className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
+                    Watch
+                    <Switch
+                      checked={c.watched}
+                      onCheckedChange={(v) => update(c.id, { watched: v })}
+                      aria-label={`Watch ${c.name}`}
+                    />
+                  </label>
+                  <label className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
+                    May reply
+                    <Switch
+                      checked={c.mayReply}
+                      onCheckedChange={(v) => update(c.id, { mayReply: v })}
+                      aria-label={`Agent may reply in ${c.name}`}
+                    />
+                  </label>
+                </li>
+              ))}
+            </ul>
+            {chats.length > SHOWN_CHATS && (
+              <p className="text-xs text-muted-foreground">
+                Showing {SHOWN_CHATS} of {chats.length}. Search to find others.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Live feed</CardTitle>
+            <CardDescription>Messages in watched chats and everything the agent sent.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {state.messages.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nothing yet. Turn on Watch for a chat to see its messages here.</p>
+            ) : (
+              <ol className="flex flex-col gap-2" aria-live="polite">
+                {[...state.messages].reverse().map((m) => (
+                  <li
+                    key={m.seq}
+                    className={`rounded-md border p-2 text-sm ${m.fromAgent ? 'border-primary/40 bg-primary/5' : ''}`}
+                  >
+                    <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{m.chatName}</span>
+                      <span>·</span>
+                      <span>{m.fromAgent ? 'agent' : m.fromMe ? 'you' : m.sender}</span>
+                      {m.fromAgent && <Badge variant="outline">sent by agent</Badge>}
+                      <time className="ml-auto" dateTime={new Date(m.timestamp).toISOString()}>
+                        {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </time>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap break-words">{m.text}</p>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </main>
+  );
+}
