@@ -52,7 +52,7 @@ export function createApp({ hub, webDir, webhookUrl, webhookSecret }: ServerOpti
   // ---- UI + REST API ----
   const state = async () => ({
     status: hub.linkStatus,
-    qr: hub.qr ? await QRCode.toDataURL(hub.qr, { margin: 1, width: 280 }) : undefined,
+    qr: hub.qr ? await QRCode.toDataURL(hub.qr, { margin: 1, width: 320 }) : undefined,
     signature: hub.signature,
     webhook: Boolean(webhookUrl),
     chats: hub.listChats(),
@@ -70,6 +70,16 @@ export function createApp({ hub, webDir, webhookUrl, webhookSecret }: ServerOpti
       res.json(hub.setPermissions(req.params.id, { watched, mayReply }));
     } catch (e) {
       res.status(404).json({ error: (e as Error).message });
+    }
+  });
+
+  // Pair again after a logout. Not an MCP tool: only the web UI may unlink the saved session.
+  app.post('/api/repair', async (_req, res) => {
+    try {
+      await hub.repair();
+      res.json({ status: hub.linkStatus });
+    } catch (e) {
+      res.status(409).json({ error: (e as Error).message });
     }
   });
 

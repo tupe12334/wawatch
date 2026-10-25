@@ -46,6 +46,8 @@ node dist/cli.js
 2. On your phone: WhatsApp → Settings → Linked devices → Link a device. Scan the QR code from the page (it also prints in the terminal).
 3. Turn on *Watch* for the chats the agent may read, and *May reply* where it may answer.
 
+![wawatch pairing screen: a QR code and the three phone steps](docs/pairing.png)
+
 To try the UI and tools without WhatsApp, run `node dist/cli.js --demo` (fake chats, nothing is sent).
 
 ### Options
@@ -61,7 +63,7 @@ To try the UI and tools without WhatsApp, run `node dist/cli.js --demo` (fake ch
 
 Example signature: `--signature "🤖 Claude (Ofek's assistant): "`. The flag or env sets the first value; once you save a signature in the UI, it is kept in `settings.json` and wins over the flag and env.
 
-To pair again, stop wawatch and delete `~/.wawatch/auth`.
+If WhatsApp logs this device out, the page shows *Pair again*. It deletes `~/.wawatch/auth` and shows a new QR code.
 
 ## Use with Claude Code (MCP)
 

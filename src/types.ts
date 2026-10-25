@@ -1,4 +1,5 @@
-export type LinkStatus = 'starting' | 'qr' | 'open' | 'closed';
+/** 'connecting' is the reconnect right after a scan; 'loggedOut' means the phone unlinked this device. */
+export type LinkStatus = 'starting' | 'qr' | 'connecting' | 'open' | 'closed' | 'loggedOut';
 
 /** A chat as the transport sees it. */
 export interface ChatRef {
@@ -30,5 +31,7 @@ export interface Transport {
   start(sink: TransportSink): Promise<void>;
   /** Sends text as-is and returns the WhatsApp message id. */
   send(chatId: string, text: string): Promise<string>;
+  /** Forgets the saved pairing and starts over, so a new QR code appears. */
+  repair(): Promise<void>;
   stop(): Promise<void>;
 }

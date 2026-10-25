@@ -6,7 +6,7 @@ import { createServer, request, type RequestListener, type Server } from 'node:h
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Hub } from '../src/hub.js';
 import { MockTransport } from '../src/mock.js';
 import { createApp } from '../src/server.js';
@@ -111,6 +111,40 @@ describe('reply signature', () => {
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('pairing and logout', () => {
+  it('reports each link status and the QR code through /api/state', async () => {
+    const { transport, base } = await setup();
+    const state = async () => (await fetch(base + '/api/state')).json();
+    transport.sink!.status('qr', 'qr-data');
+    expect(await state()).toMatchObject({ status: 'qr' });
+    expect((await state()).qr).toMatch(/^data:image\/png;base64,/);
+    for (const status of ['connecting', 'open', 'loggedOut'] as const) {
+      transport.sink!.status(status);
+      const s = await state();
+      expect(s.status).toBe(status);
+      expect(s.qr).toBeUndefined();
+    }
+  });
+
+  it('repairs only after a logout, refuses foreign origins, and restarts the transport', async () => {
+    const { hub, transport, base } = await setup();
+    const repair = vi.spyOn(transport, 'repair');
+    const url = base + '/api/repair';
+    const json = { 'Content-Type': 'application/json' };
+    const foreign = await fetch(url, { method: 'POST', body: '{}', headers: { ...json, Origin: 'https://evil.example' } });
+    expect(foreign.status).toBe(403);
+    expect((await fetch(url, { method: 'POST', body: '{}', headers: json })).status).toBe(409);
+    expect(repair).not.toHaveBeenCalled();
+
+    transport.sink!.status('loggedOut');
+    const ok = await fetch(url, { method: 'POST', body: '{}', headers: json });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ status: 'qr' });
+    expect(repair).toHaveBeenCalledOnce();
+    expect(hub.linkStatus).toBe('qr');
   });
 });
 

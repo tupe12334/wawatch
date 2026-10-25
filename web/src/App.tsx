@@ -23,7 +23,7 @@ interface Message {
 }
 
 interface State {
-  status: 'starting' | 'qr' | 'open' | 'closed';
+  status: 'starting' | 'qr' | 'connecting' | 'open' | 'closed' | 'loggedOut';
   qr?: string;
   signature: string;
   webhook: boolean;
@@ -34,11 +34,15 @@ interface State {
 const STATUS: Record<State['status'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   open: { label: 'Connected', variant: 'default' },
   qr: { label: 'Scan QR code', variant: 'secondary' },
+  connecting: { label: 'Linking…', variant: 'outline' },
   starting: { label: 'Connecting…', variant: 'outline' },
   closed: { label: 'Disconnected', variant: 'destructive' },
+  loggedOut: { label: 'Logged out', variant: 'destructive' },
 };
 
 const SHOWN_CHATS = 100;
+const PRIMARY_BUTTON =
+  'h-8 shrink-0 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/80 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50';
 
 export function App() {
   const [state, setState] = useState<State>();
@@ -88,6 +92,12 @@ export function App() {
     refresh();
   };
 
+  const pairAgain = async () => {
+    const r = await fetch('/api/repair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) setError((await r.json()).error);
+    refresh();
+  };
+
   const chats = useMemo(
     () => (state?.chats ?? []).filter((c) => c.name.toLowerCase().includes(query.toLowerCase())),
     [state, query],
@@ -121,16 +131,39 @@ export function App() {
         </p>
       )}
 
-      {state.status === 'qr' && state.qr && (
+      {state.status === 'qr' && (
         <Card>
           <CardHeader>
             <CardTitle>Link your WhatsApp</CardTitle>
+            <CardDescription>Scan this code with your phone. It refreshes by itself when it expires.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6 md:grid-cols-[auto_1fr] md:items-center">
+            {state.qr ? (
+              <img src={state.qr} alt="WhatsApp pairing QR code" className="size-72 justify-self-center rounded-md border md:size-80" />
+            ) : (
+              <p className="text-sm text-muted-foreground">Preparing the code…</p>
+            )}
+            <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm">
+              <li>Open WhatsApp on your phone and tap Settings.</li>
+              <li>Tap Linked devices, then Link a device.</li>
+              <li>Point your phone at this code.</li>
+            </ol>
+          </CardContent>
+        </Card>
+      )}
+
+      {state.status === 'loggedOut' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Logged out</CardTitle>
             <CardDescription>
-              On your phone, open WhatsApp → Settings → Linked devices → Link a device, and scan this code.
+              This device was logged out from your phone. The agent cannot read or send messages until you pair again.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <img src={state.qr} alt="WhatsApp pairing QR code" className="size-64 rounded-md border" />
+            <button type="button" onClick={pairAgain} className={PRIMARY_BUTTON}>
+              Pair again
+            </button>
           </CardContent>
         </Card>
       )}
@@ -151,7 +184,7 @@ export function App() {
             <button
               type="submit"
               disabled={!signature.trim()}
-              className="h-8 shrink-0 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground outline-none transition-colors hover:bg-primary/80 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+              className={PRIMARY_BUTTON}
             >
               Save
             </button>

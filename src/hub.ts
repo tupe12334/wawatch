@@ -175,6 +175,12 @@ export class Hub extends EventEmitter implements TransportSink {
     });
   }
 
+  /** Starts pairing over after a logout. Only allowed when WhatsApp has logged this device out. */
+  repair() {
+    if (this.linkStatus !== 'loggedOut') throw new Error(`Nothing to repair: status is ${this.linkStatus}.`);
+    return this.transport.repair();
+  }
+
   /** Sends text to a chat the user allowed. The signature is prepended. */
   async send(chatId: string, text: string): Promise<Message> {
     const chat = this.chatMap.get(chatId);

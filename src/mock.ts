@@ -40,6 +40,11 @@ export class MockTransport implements Transport {
     return `out-${++this.n}`;
   }
 
+  /** Shows a new pairing code. Tests drive other states through `sink.status` directly. */
+  async repair() {
+    this.sink!.status('qr', `mock-qr-${++this.n}`);
+  }
+
   async stop() {
     clearInterval(this.timer);
   }

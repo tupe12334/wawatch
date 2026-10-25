@@ -10,7 +10,8 @@ import makeWASocket, {
   type WAMessage,
   type WASocket,
 } from 'baileys';
-import { join } from 'node:path';
+import { rmSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import type { ChatRef, IncomingMessage, Transport, TransportSink } from './types.js';
@@ -48,6 +49,14 @@ const LISTENED_EVENTS = [
 /** Next reconnect delay: doubles, capped at 60 s. */
 export function nextBackoff(ms: number): number {
   return Math.min(ms * 2, BACKOFF_MAX_MS);
+}
+
+/** Deletes the WhatsApp keys in `<dataDir>/auth` and nothing else. */
+export function clearAuth(dataDir: string) {
+  const root = resolve(dataDir);
+  const authDir = resolve(root, 'auth');
+  if (!authDir.startsWith(root + sep)) throw new Error('Refusing to delete outside the data folder.');
+  rmSync(authDir, { recursive: true, force: true });
 }
 
 /** Real WhatsApp connection as a linked device, through Baileys. */
@@ -114,10 +123,15 @@ export class BaileysTransport implements Transport {
       }
       if (connection === 'close') {
         const code = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
-        sink.status('closed');
         if (code === DisconnectReason.loggedOut) {
+          sink.status('loggedOut');
           console.error(`WhatsApp logged this device out. Delete ${join(this.dataDir, 'auth')} and restart to pair again.`);
+        } else if (code === DisconnectReason.restartRequired) {
+          // WhatsApp asks for a reconnect right after a scan. This is not an error.
+          sink.status('connecting');
+          this.scheduleReconnect(`Linked, reconnecting (status ${code})`);
         } else {
+          sink.status('closed');
           this.scheduleReconnect(`WhatsApp connection closed (status ${code})`);
         }
       }
@@ -178,6 +192,12 @@ export class BaileysTransport implements Transport {
       throw e;
     }
     return messageId;
+  }
+
+  async repair() {
+    clearAuth(this.dataDir);
+    this.backoff = BACKOFF_START_MS;
+    await this.connect(); // closes the old socket and emits a new QR
   }
 
   async stop() {
