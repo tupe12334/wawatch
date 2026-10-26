@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import writeFileAtomic from 'write-file-atomic';
 import type { ChatRef, IncomingMessage, LinkStatus, Transport, TransportSink } from './types.js';
 
 export interface Chat {
@@ -253,12 +254,10 @@ export class Hub extends EventEmitter implements TransportSink {
     }
   }
 
-  /** Keeps the newest maxMessages lines. Writes a temp file, then renames it over the original. */
+  /** Keeps the newest maxMessages lines. */
   private compact(file: string) {
     const kept = readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-this.maxMessages);
-    const tmp = `${file}.tmp`;
-    writeFileSync(tmp, kept.map((line) => line + '\n').join(''));
-    renameSync(tmp, file);
+    writeFileAtomic.sync(file, kept.map((line) => line + '\n').join(''));
     this.fileLines = kept.length;
   }
 
@@ -266,6 +265,7 @@ export class Hub extends EventEmitter implements TransportSink {
     if (!this.dataDir) return;
     // Persist only chats with a permission, so the file holds no full chat list.
     const chats = [...this.chatMap.values()].filter((c) => c.watched || c.mayReply);
-    writeFileSync(join(this.dataDir, 'settings.json'), JSON.stringify({ chats, signature: this.savedSignature }, null, 2));
+    // Atomic: a crash mid-write must not leave a half-written file that fails JSON.parse on start.
+    writeFileAtomic.sync(join(this.dataDir, 'settings.json'), JSON.stringify({ chats, signature: this.savedSignature }, null, 2));
   }
 }
