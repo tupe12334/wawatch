@@ -16,3 +16,6 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+
+      - name: linecheck
+        uses: tupe12334/linecheck@main
