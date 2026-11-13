@@ -21,12 +21,30 @@
     return WPP.chat.list().map((c) => ({ id: c.id._serialized, name: c.formattedTitle || c.name || c.id._serialized }));
   }
 
+  // A failed list posts nothing; the next resync tries again.
+  function postChats() {
+    try {
+      post({ type: 'chats', chats: listChats() });
+    } catch (err) {
+      console.warn('wawatch: chat list failed', err);
+    }
+  }
+
+  let ready = false;
+
   WPP.loader.onReady(() => {
-    post({ type: 'chats', chats: listChats() });
+    ready = true;
+    postChats();
     WPP.on('chat.new_message', (m) => {
       const message = toMessage(m);
       if (message) post({ type: 'message', message });
     });
+  });
+
+  // The hub socket may open after WPP is ready, so content.js asks for the chat list again.
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || e.data?.source !== FROM_CONTENT || e.data.type !== 'resync') return;
+    if (ready) postChats();
   });
 
   window.addEventListener('message', async (e) => {
