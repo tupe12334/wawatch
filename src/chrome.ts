@@ -25,8 +25,6 @@ type Inbound =
   | { type: 'sent'; reqId: number; messageId: string }
   | { type: 'sendError'; reqId: number; error: string };
 
-const echoKey = (chatId: string, text: string) => `${chatId}\n${text}`;
-
 /**
  * WhatsApp Web through the wawatch Chrome extension. The extension connects to
  * ws://127.0.0.1:<port>/extension with the token from ~/.wawatch/extension-token.
@@ -38,8 +36,12 @@ export class ChromeTransport implements Transport {
   private socket?: WebSocket;
   private reqId = 0;
   private pending = new Map<number, { resolve: (id: string) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
-  /** Texts the agent sent, so their echo from WhatsApp is not recorded twice. */
-  private recentSends = new Map<string, number>();
+  /**
+   * Texts the agent sent (one expiry per send), so their echo from WhatsApp is not recorded twice.
+   * Keyed on text only: the echo may carry the chat's @lid id instead of the @c.us id given to
+   * send(), and it can arrive before the 'sent' ack, so neither chat id nor message id matches.
+   */
+  private recentSends = new Map<string, number[]>();
 
   constructor(private dataDir: string) {}
 
@@ -104,10 +106,13 @@ export class ChromeTransport implements Transport {
 
   private onMessage(m: IncomingMessage) {
     if (m.fromMe) {
-      const key = echoKey(m.chatId, m.text);
-      const expires = this.recentSends.get(key);
-      this.recentSends.delete(key);
-      if (expires && expires > Date.now()) return; // the hub already recorded this send
+      const sends = this.recentSends.get(m.text);
+      const i = sends?.findIndex((expires) => expires > Date.now()) ?? -1;
+      if (sends && i >= 0) {
+        sends.splice(i, 1);
+        if (!sends.length) this.recentSends.delete(m.text);
+        return; // the hub already recorded this send
+      }
     }
     this.sink!.message(m);
   }
@@ -125,8 +130,12 @@ export class ChromeTransport implements Transport {
     if (!ws) throw new Error('The WhatsApp Web tab is not connected.');
     const reqId = ++this.reqId;
     const now = Date.now();
-    for (const [k, expires] of this.recentSends) if (expires <= now) this.recentSends.delete(k);
-    this.recentSends.set(echoKey(chatId, text), now + ECHO_WINDOW_MS);
+    for (const [k, sends] of this.recentSends) {
+      const live = sends.filter((expires) => expires > now);
+      if (live.length) this.recentSends.set(k, live);
+      else this.recentSends.delete(k);
+    }
+    this.recentSends.set(text, [...(this.recentSends.get(text) ?? []), now + ECHO_WINDOW_MS]);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(reqId);
