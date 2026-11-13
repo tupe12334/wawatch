@@ -143,11 +143,13 @@ export function createApp({ hub, webDir, webhookUrl, webhookSecret, webhookRetry
   // Live updates for the UI (Server-Sent Events).
   app.get('/api/events', (req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-    const onState = () => res.write('event: state\ndata: {}\n\n');
+    // Carries the link status, so watchers see a lost link without polling /api/state.
+    const onState = () => res.write(`event: state\ndata: ${JSON.stringify({ status: hub.linkStatus })}\n\n`);
     const onMessage = (m: Message) => {
       if (m.fromAgent || hub.getChat(m.chatId)?.watched) res.write(`event: message\ndata: ${JSON.stringify(m)}\n\n`);
     };
     const ping = setInterval(() => res.write(': ping\n\n'), 25000);
+    onState(); // the current status, so a new client does not wait for the next change
     hub.on('state', onState);
     hub.on('message', onMessage);
     req.on('close', () => {
