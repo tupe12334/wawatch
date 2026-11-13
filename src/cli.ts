@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { BaileysTransport } from './baileys.js';
+import { ChromeTransport } from './chrome.js';
 import { Hub } from './hub.js';
 import { MockTransport } from './mock.js';
 import { createApp } from './server.js';
@@ -15,6 +16,7 @@ const { values: args } = parseArgs({
     signature: { type: 'string', default: process.env.WAWATCH_SIGNATURE ?? '🤖 ' },
     'max-messages': { type: 'string', default: process.env.WAWATCH_MAX_MESSAGES ?? '5000' },
     webhook: { type: 'string', default: process.env.WAWATCH_WEBHOOK_URL },
+    transport: { type: 'string', default: 'baileys' },
     demo: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
@@ -23,9 +25,10 @@ const { values: args } = parseArgs({
 if (args.help) {
   console.log(`wawatch - let AI agents watch and answer your WhatsApp chats
 
-Usage: wawatch [--port 4747] [--data ~/.wawatch] [--signature "🤖 "] [--max-messages 5000] [--webhook URL] [--demo]
+Usage: wawatch [--port 4747] [--data ~/.wawatch] [--signature "🤖 "] [--max-messages 5000] [--webhook URL] [--transport baileys|chrome] [--demo]
 
-  --demo   fake chats, no WhatsApp connection (try the UI and MCP tools)
+  --transport  baileys (default) or chrome (through the wawatch Chrome extension)
+  --demo       fake chats, no WhatsApp connection (try the UI and MCP tools)
 
 Env: WAWATCH_PORT, WAWATCH_DATA, WAWATCH_SIGNATURE, WAWATCH_MAX_MESSAGES, WAWATCH_WEBHOOK_URL, WAWATCH_WEBHOOK_SECRET`);
   process.exit(0);
@@ -37,15 +40,22 @@ if (!Number.isInteger(maxMessages) || maxMessages < 1) {
   process.exit(1);
 }
 
-const transport = args.demo ? new MockTransport({ demoIntervalMs: 15000 }) : new BaileysTransport(args.data!);
+if (args.transport !== 'baileys' && args.transport !== 'chrome') {
+  console.error('--transport must be baileys or chrome.');
+  process.exit(1);
+}
+
+const chrome = args.transport === 'chrome' && !args.demo ? new ChromeTransport(args.data!) : undefined;
+const transport = args.demo ? new MockTransport({ demoIntervalMs: 15000 }) : (chrome ?? new BaileysTransport(args.data!));
 const hub = new Hub({ transport, dataDir: args.demo ? undefined : args.data, signature: args.signature, maxMessages });
 const webDir = join(dirname(fileURLToPath(import.meta.url)), 'web');
 const app = createApp({ hub, webDir, webhookUrl: args.webhook, webhookSecret: process.env.WAWATCH_WEBHOOK_SECRET });
 
-app.listen(Number(args.port), '127.0.0.1', () => {
+const server = app.listen(Number(args.port), '127.0.0.1', () => {
   console.log(`wawatch UI:  http://127.0.0.1:${args.port}`);
   console.log(`MCP server:  http://127.0.0.1:${args.port}/mcp`);
 });
+if (chrome) server.on('upgrade', (req, socket, head) => chrome.handleUpgrade(req, socket, head));
 await hub.start();
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

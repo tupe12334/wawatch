@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "wawatch bridge",
+  "version": "0.1.0",
+  "description": "Connects WhatsApp Web to the local wawatch hub on 127.0.0.1.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://web.whatsapp.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["wa-js.js", "bridge.js"],
+      "matches": ["https://web.whatsapp.com/*"]
+    }
+  ],
+  "action": { "default_popup": "popup.html" }
+}

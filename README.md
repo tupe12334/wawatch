@@ -60,6 +60,7 @@ To try the UI and tools without WhatsApp, run `node dist/cli.js --demo` (fake ch
 | `--max-messages` | `WAWATCH_MAX_MESSAGES` | `5000` |
 | `--webhook` | `WAWATCH_WEBHOOK_URL` | off |
 | | `WAWATCH_WEBHOOK_SECRET` | off |
+| `--transport` | | `baileys` (`chrome`: use the Chrome extension in `extension/`) |
 | `--demo` | | off |
 
 Example signature: `--signature "🤖 Claude (Ofek's assistant): "`. The flag or env sets the first value; once you save a signature in the UI, it is kept in `settings.json` and wins over the flag and env.
