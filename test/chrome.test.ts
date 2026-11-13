@@ -27,4 +27,17 @@ describe('ChromeTransport echo', () => {
     expect(message).toHaveBeenCalledWith(echo);
     priv.receive(JSON.stringify({ type: 'sent', reqId: 1, messageId: 'k1' })); // settles send(), clears its 30 s timer
   });
+
+  it('drops the echo when WhatsApp reports it under the @lid chat id', () => {
+    const t = new ChromeTransport('/nonexistent');
+    const message = vi.fn();
+    const priv = t as unknown as { sink: unknown; socket: unknown; receive(raw: string): void };
+    priv.sink = { message };
+    priv.socket = { send() {} };
+    void t.send('111@c.us', 'hi').catch(() => {});
+    const echo = { id: 'k1', chatId: '999@lid', sender: 'me', fromMe: true, text: 'hi', timestamp: 1 };
+    priv.receive(JSON.stringify({ type: 'message', message: echo }));
+    expect(message).not.toHaveBeenCalled();
+    priv.receive(JSON.stringify({ type: 'sent', reqId: 1, messageId: 'k1' }));
+  });
 });
