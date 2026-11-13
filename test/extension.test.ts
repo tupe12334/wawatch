@@ -113,4 +113,16 @@ describe('extension messages', () => {
       },
     ]);
   });
+
+  it('skips the ciphertext emit that precedes a decrypted message', async () => {
+    const ext = loadExtension(async () => []);
+    await tick();
+    const ws = ext.sockets[0];
+    ws.readyState = 1;
+    ext.ready();
+    await tick();
+    ws.sent.length = 0;
+    ext.emit('chat.new_message', { ...msg(false), body: undefined, type: 'ciphertext' });
+    expect(ws.sent).toEqual([]);
+  });
 });

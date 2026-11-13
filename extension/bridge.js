@@ -7,6 +7,8 @@
   // m is a wa-js MsgModel: fromMe lives on the MsgKey (m.id), the sender contact on m.senderObj (m.sender is a bare Wid).
   function toMessage(m) {
     const fromMe = !!m.id?.fromMe;
+    // wa-js emits a not-yet-decrypted message as 'ciphertext', then again with the real text.
+    if (m.type === 'ciphertext') return null;
     const text = m.body || (m.type && m.type !== 'chat' ? `[${m.type}]` : '');
     if (!text) return null;
     return {
