@@ -25,5 +25,6 @@ describe('ChromeTransport echo', () => {
     expect(message).not.toHaveBeenCalled();
     priv.receive(JSON.stringify({ type: 'message', message: echo })); // sent from the phone: recorded
     expect(message).toHaveBeenCalledWith(echo);
+    priv.receive(JSON.stringify({ type: 'sent', reqId: 1, messageId: 'k1' })); // settles send(), clears its 30 s timer
   });
 });
