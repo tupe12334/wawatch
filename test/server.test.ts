@@ -160,6 +160,21 @@ describe('pairing and logout', () => {
     expect(repair).toHaveBeenCalledOnce();
     expect(hub.linkStatus).toBe('qr');
   });
+
+  it('sends the link status in SSE state events, first on connect', async () => {
+    const { transport, base } = await setup();
+    const ctrl = new AbortController();
+    const res = await fetch(base + '/api/events', { signal: ctrl.signal });
+    const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+    let text = '';
+    const until = async (s: string) => {
+      while (!text.includes(s)) text += (await reader.read()).value;
+    };
+    await until('data: {"status":"open"}');
+    transport.sink!.status('closed');
+    await until('event: state\ndata: {"status":"closed"}');
+    ctrl.abort();
+  });
 });
 
 describe('webhook', () => {
