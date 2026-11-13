@@ -29,6 +29,7 @@ describe('Hub', () => {
     expect(hub.read().map((m) => m.text)).toEqual(['secret', 'hello']);
   });
 
+  // Hub half of the resync fix: a repeated chat list must not reset permissions. The race itself is in extension.test.ts.
   it('keeps permissions when the chat list is sent again', async () => {
     const { hub } = await setup();
     hub.chats([{ id: '111@s.whatsapp.net', name: 'Old' }]);
