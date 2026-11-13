@@ -29,6 +29,19 @@ describe('Hub', () => {
     expect(hub.read().map((m) => m.text)).toEqual(['secret', 'hello']);
   });
 
+  it('keeps permissions when the chat list is sent again', async () => {
+    const { hub } = await setup();
+    hub.chats([{ id: '111@s.whatsapp.net', name: 'Old' }]);
+    hub.setPermissions('111@s.whatsapp.net', { watched: true, mayReply: true });
+    hub.chats([{ id: '111@s.whatsapp.net', name: 'New' }]);
+    expect(hub.listChats().find((c) => c.id === '111@s.whatsapp.net')).toEqual({
+      id: '111@s.whatsapp.net',
+      name: 'New',
+      watched: true,
+      mayReply: true,
+    });
+  });
+
   it('reads only messages after the cursor', async () => {
     const { hub, transport } = await setup();
     hub.setPermissions('111@s.whatsapp.net', { watched: true });

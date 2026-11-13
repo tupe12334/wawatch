@@ -21,12 +21,21 @@
     return WPP.chat.list().map((c) => ({ id: c.id._serialized, name: c.formattedTitle || c.name || c.id._serialized }));
   }
 
+  let ready = false;
+
   WPP.loader.onReady(() => {
+    ready = true;
     post({ type: 'chats', chats: listChats() });
     WPP.on('chat.new_message', (m) => {
       const message = toMessage(m);
       if (message) post({ type: 'message', message });
     });
+  });
+
+  // The hub socket may open after WPP is ready, so content.js asks for the chat list again.
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || e.data?.source !== FROM_CONTENT || e.data.type !== 'resync') return;
+    if (ready) post({ type: 'chats', chats: listChats() });
   });
 
   window.addEventListener('message', async (e) => {

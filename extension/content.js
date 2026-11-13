@@ -19,6 +19,7 @@
     const { token } = await chrome.storage.local.get('token');
     if (!token) return setTimeout(connect, RETRY_MS);
     ws = new WebSocket(`${HUB_URL}?token=${encodeURIComponent(token)}`);
+    ws.onopen = () => window.postMessage({ source: 'wawatch-content', type: 'resync' }, '*');
     ws.onmessage = (e) => window.postMessage({ source: 'wawatch-content', ...JSON.parse(e.data) }, '*');
     ws.onclose = () => {
       ws = null;
