@@ -70,6 +70,20 @@ describe('Hub', () => {
     expect(hub.getChat('111@s.whatsapp.net')).toMatchObject({ watched: false, mayReply: false });
   });
 
+  it('turning may-reply off undoes only the watch that may-reply turned on', async () => {
+    const { hub } = await setup();
+    const id = '111@s.whatsapp.net';
+    hub.setPermissions(id, { mayReply: true });
+    await hub.send(id, 'hi'); // sending does not touch the flags
+    hub.setPermissions(id, { mayReply: false });
+    expect(hub.getChat(id)).toMatchObject({ watched: false, mayReply: false });
+
+    hub.setPermissions(id, { watched: true }); // the user watches on purpose
+    hub.setPermissions(id, { mayReply: true });
+    hub.setPermissions(id, { mayReply: false });
+    expect(hub.getChat(id)).toMatchObject({ watched: true, mayReply: false });
+  });
+
   it('wait wakes on a live watched message, ignores others, and times out', async () => {
     const { hub, transport } = await setup();
     hub.setPermissions('333@g.us', { watched: true });

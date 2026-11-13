@@ -55,6 +55,11 @@ export class Hub extends EventEmitter implements TransportSink {
   /** Lines in messages.jsonl, as far as this process knows. */
   private fileLines = 0;
   private appendsSinceCompact = 0;
+  /**
+   * Chats that "may reply" turned watched, so turning "may reply" off unwatches them again.
+   * ponytail: in memory only; after a restart such a chat stays watched until the user turns watch off.
+   */
+  private watchedForReply = new Set<string>();
 
   constructor(opts: HubOptions) {
     super();
@@ -117,13 +122,23 @@ export class Hub extends EventEmitter implements TransportSink {
     return this.chatMap.get(id);
   }
 
-  /** Changes permissions. Turning "watch" off also turns "may reply" off. */
+  /**
+   * Changes permissions. Turning "watch" off also turns "may reply" off. Turning "may reply" on
+   * also turns "watch" on, and turning it off again undoes that watch.
+   */
   setPermissions(id: string, p: { watched?: boolean; mayReply?: boolean }): Chat {
     const chat = this.chatMap.get(id);
     if (!chat) throw new Error(`Unknown chat: ${id}`);
-    if (p.watched !== undefined) chat.watched = p.watched;
+    if (p.watched !== undefined) {
+      chat.watched = p.watched;
+      this.watchedForReply.delete(id);
+    }
     if (p.mayReply !== undefined) chat.mayReply = p.mayReply;
-    if (p.mayReply) chat.watched = true; // replying needs reading
+    if (p.mayReply && !chat.watched) {
+      chat.watched = true; // replying needs reading
+      this.watchedForReply.add(id);
+    }
+    if (p.mayReply === false && this.watchedForReply.delete(id)) chat.watched = false;
     if (!chat.watched) chat.mayReply = false;
     this.save();
     this.emit('state');
