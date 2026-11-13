@@ -162,6 +162,25 @@ describe('pairing and logout', () => {
   });
 });
 
+describe('send timeout', () => {
+  it('answers /api/send with a 504 JSON error when the transport never confirms', async () => {
+    const transport = new MockTransport();
+    const hub = new Hub({ transport, sendTimeoutMs: 50 });
+    await hub.start();
+    hub.setPermissions('111@s.whatsapp.net', { mayReply: true });
+    vi.spyOn(transport, 'send').mockReturnValue(new Promise(() => {})); // a hung WhatsApp Web tab
+    const base = await listen(createApp({ hub }) as unknown as RequestListener);
+    const res = await fetch(base + '/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: '111@s.whatsapp.net', text: 'hi' }),
+    });
+    expect(res.status).toBe(504);
+    expect((await res.json()).error).toMatch(/did not confirm the send/);
+    expect(hub.read({ includeAgent: true })).toEqual([]);
+  });
+});
+
 describe('webhook', () => {
   it('posts new messages from watched chats with an HMAC signature', async () => {
     const received: { body: string; sig?: string }[] = [];

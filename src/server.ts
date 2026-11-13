@@ -4,7 +4,7 @@ import { createHmac } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import QRCode from 'qrcode';
-import type { Hub, Message } from './hub.js';
+import { SendTimeoutError, type Hub, type Message } from './hub.js';
 import { createMcpServer, messageView } from './mcp.js';
 
 export interface ServerOptions {
@@ -136,7 +136,7 @@ export function createApp({ hub, webDir, webhookUrl, webhookSecret, webhookRetry
     try {
       res.json({ sent: messageView(await hub.send(chat_id, text)) });
     } catch (e) {
-      res.status(403).json({ error: (e as Error).message });
+      res.status(e instanceof SendTimeoutError ? 504 : 403).json({ error: (e as Error).message });
     }
   });
 
