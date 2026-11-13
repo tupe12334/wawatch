@@ -153,6 +153,8 @@ curl 'http://127.0.0.1:4747/api/messages?since=12&chat_id=...@g.us'
 
 The same rules apply: reads cover watched chats only, and sends need *May reply*.
 
+Message `text` can span lines, sent as `\n` in the JSON. Parse the response with a JSON parser such as `jq`. Do not pass it through shell `echo`: zsh `echo` turns `\n` into a real line break, and the JSON no longer parses.
+
 ## Why Baileys
 
 Two maintained libraries implement WhatsApp's linked-device protocol in Node.js:
