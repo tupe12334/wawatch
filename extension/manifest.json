@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Connects WhatsApp Web to the local wawatch hub on 127.0.0.1.",
   "permissions": ["storage"],
+  "background": { "service_worker": "background.js" },
   "host_permissions": ["https://web.whatsapp.com/*"],
   "content_scripts": [
     {
