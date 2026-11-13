@@ -27,11 +27,18 @@ export interface HubOptions {
   signature?: string;
   /** Newest messages kept in memory and in messages.jsonl. Default 5000. */
   maxMessages?: number;
+  /** Longest wait for the transport to confirm a send. Default 15000. */
+  sendTimeoutMs?: number;
 }
+
+/** The transport did not confirm a send in time. The message may still go out. */
+export class SendTimeoutError extends Error {}
 
 const DEFAULT_SIGNATURE = '🤖 ';
 
 const DEFAULT_MAX_MESSAGES = 5000;
+/** Below common HTTP client timeouts (curl -m 20), so callers get a JSON error, not a dropped request. */
+const DEFAULT_SEND_TIMEOUT_MS = 15_000;
 const MAX_TEXT = 4096;
 /** Appends between checks of the file size, so compaction does not run on every write. */
 const COMPACT_EVERY = 500;
@@ -52,6 +59,7 @@ export class Hub extends EventEmitter implements TransportSink {
   /** Set only after the user edits the signature in the UI; wins over the CLI value on start. */
   private savedSignature?: string;
   private maxMessages = DEFAULT_MAX_MESSAGES;
+  private sendTimeoutMs: number;
   /** Lines in messages.jsonl, as far as this process knows. */
   private fileLines = 0;
   private appendsSinceCompact = 0;
@@ -63,6 +71,7 @@ export class Hub extends EventEmitter implements TransportSink {
     // A blank --signature or WAWATCH_SIGNATURE would send replies without the AI notice.
     this.signature = opts.signature?.trim() ? opts.signature : DEFAULT_SIGNATURE;
     this.maxMessages = opts.maxMessages ?? DEFAULT_MAX_MESSAGES;
+    this.sendTimeoutMs = opts.sendTimeoutMs ?? DEFAULT_SEND_TIMEOUT_MS;
     this.dataDir = opts.dataDir;
     if (this.dataDir) this.load(this.dataDir);
   }
@@ -201,7 +210,19 @@ export class Hub extends EventEmitter implements TransportSink {
     if (text.length > MAX_TEXT) throw new Error(`Message text is longer than ${MAX_TEXT} characters.`);
     if (this.linkStatus !== 'open') throw new Error(`WhatsApp is not connected (status: ${this.linkStatus}).`);
     const full = this.signature + text;
-    const id = await this.transport.send(chatId, full);
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new SendTimeoutError(`WhatsApp did not confirm the send in ${this.sendTimeoutMs / 1000} s. It may still arrive: check the chat before you send again.`)),
+        this.sendTimeoutMs,
+      );
+    });
+    let id: string;
+    try {
+      id = await Promise.race([this.transport.send(chatId, full), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
     return this.record({ id, chatId, sender: 'me', fromMe: true, text: full, timestamp: Date.now() }, true);
   }
 
