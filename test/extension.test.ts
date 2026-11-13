@@ -126,3 +126,46 @@ describe('extension messages', () => {
     expect(ws.sent).toEqual([]);
   });
 });
+
+describe('extension background', () => {
+  // Runs background.js with a stub chrome.tabs that holds the open tabs.
+  function loadBackground(open: { id: number }[]) {
+    const listeners: (() => void)[] = [];
+    const on = { addListener: (fn: () => void) => listeners.push(fn) };
+    const updates: unknown[] = [];
+    const tabs = {
+      query: async () => [...open],
+      create: async (props: object) => {
+        const tab = { id: 99, ...props };
+        open.push(tab);
+        return tab;
+      },
+      update: async (id: number, props: object) => updates.push([id, props]),
+      onRemoved: on,
+    };
+    runInNewContext(readFileSync('extension/background.js', 'utf8'), {
+      console,
+      chrome: { tabs, runtime: { onInstalled: on, onStartup: on } },
+    });
+    return { open, updates, fire: () => listeners.at(-1)!() };
+  }
+
+  it('reopens a pinned WhatsApp Web tab when the last one closes', async () => {
+    const bg = loadBackground([]);
+    bg.fire(); // tabs.onRemoved
+    await tick();
+    await tick();
+    expect(bg.open).toEqual([{ id: 99, url: 'https://web.whatsapp.com/', pinned: true, active: false }]);
+    expect(bg.updates).toEqual([[99, { autoDiscardable: false }]]);
+  });
+
+  it('keeps an open WhatsApp Web tab and opens no second one', async () => {
+    const bg = loadBackground([{ id: 7 }]);
+    bg.fire();
+    await tick();
+    await tick();
+    expect(bg.open).toEqual([{ id: 7 }]);
+    expect(bg.updates).toEqual([[7, { autoDiscardable: false }]]);
+  });
+});
+
