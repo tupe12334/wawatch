@@ -4,27 +4,32 @@
   const FROM_CONTENT = 'wawatch-content';
   const post = (msg) => window.postMessage({ source: TO_CONTENT, ...msg }, '*');
 
+  // m is a wa-js MsgModel: fromMe lives on the MsgKey (m.id), the sender contact on m.senderObj (m.sender is a bare Wid).
   function toMessage(m) {
+    const fromMe = !!m.id?.fromMe;
+    // wa-js emits a not-yet-decrypted message as 'ciphertext', then again with the real text.
+    if (m.type === 'ciphertext') return null;
     const text = m.body || (m.type && m.type !== 'chat' ? `[${m.type}]` : '');
     if (!text) return null;
     return {
       id: m.id?._serialized,
       chatId: m.id?.remote?._serialized ?? m.from?._serialized,
-      sender: m.fromMe ? 'me' : m.sender?.pushname || m.sender?.name || m.author?._serialized || m.from?._serialized || '',
-      fromMe: !!m.fromMe,
+      sender: fromMe ? 'me' : m.senderObj?.pushname || m.senderObj?.name || m.author?._serialized || m.from?._serialized || '',
+      fromMe,
       text,
       timestamp: (m.t || 0) * 1000 || Date.now(),
     };
   }
 
-  function listChats() {
-    return WPP.chat.list().map((c) => ({ id: c.id._serialized, name: c.formattedTitle || c.name || c.id._serialized }));
+  // WPP.chat.list() is async in wa-js 4.x.
+  async function listChats() {
+    return (await WPP.chat.list()).map((c) => ({ id: c.id._serialized, name: c.formattedTitle || c.name || c.id._serialized }));
   }
 
   // A failed list posts nothing; the next resync tries again.
-  function postChats() {
+  async function postChats() {
     try {
-      post({ type: 'chats', chats: listChats() });
+      post({ type: 'chats', chats: await listChats() });
     } catch (err) {
       console.warn('wawatch: chat list failed', err);
     }
