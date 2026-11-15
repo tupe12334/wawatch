@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/tupe12334/linecheck/main/schema/linecheck.schema.json
+
+rules:
+  - pattern: "**/*.{ts,tsx}"
+    warn: 200
+    warn_message: "Getting long — consider splitting into modules"
+    error: 400
+    error_message: "Too large to review easily; split this file now"
+  - pattern: "**/*.{css,html}"
+    warn: 200
+    error: 400
+  - pattern: "**/*.{json,yml,yaml}"
+    warn: 200
+    error: 400
+
+exclude:
+  - "**/package-lock.json"
+  - "**/node_modules/**"
+  - "**/dist/**"
