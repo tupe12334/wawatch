@@ -67,6 +67,17 @@ Example signature: `--signature "🤖 Claude (Ofek's assistant): "`. The flag or
 
 If WhatsApp logs this device out, the page shows *Pair again*. It deletes `~/.wawatch/auth` and shows a new QR code.
 
+### Chrome transport
+
+`--transport chrome` reads WhatsApp from an open WhatsApp Web tab instead of Baileys:
+
+1. Start `node dist/cli.js --transport chrome`. It writes a token to `~/.wawatch/extension-token`.
+2. In Chrome, open `chrome://extensions`, turn on *Developer mode*, click *Load unpacked*, and pick the `extension/` folder.
+3. Click the *wawatch bridge* icon, paste the token, and click *Save*.
+4. Open <https://web.whatsapp.com> and keep the tab open.
+
+The extension connects to `ws://127.0.0.1:4747/extension`, so this transport needs the default port.
+
 ## Use with Claude Code (MCP)
 
 wawatch serves MCP over Streamable HTTP at `http://127.0.0.1:4747/mcp`.
@@ -91,7 +102,7 @@ Then ask Claude something like: *"Watch the 'Family trip' chat. Wait for message
 | `list_chats` | Chats with `watched` / `may_reply` flags. Optional `query`, `watched_only`, `limit`. |
 | `watch_chat` / `unwatch_chat` | Start or stop reading a chat. Unwatch also removes *May reply*. |
 | `read_messages` | Messages from watched chats. No `since`: the latest. With `since`: messages after that cursor. Optional `chat_id`, `limit`. |
-| `wait_for_message` | Blocks until a new message arrives in a watched chat (default 60 s, max 600 s). Returns `[]` on timeout. |
+| `wait_for_message` | Blocks until a new message arrives in a watched chat (default 60 s, max 600 s). Returns an empty `messages` list on timeout. |
 | `send_message` | Sends `text` to `chat_id` if *May reply* is on. Adds the signature. |
 
 Every read returns a `cursor`. Pass it back as `since` so no message is lost between calls. A simple agent loop:
