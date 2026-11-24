@@ -21,6 +21,55 @@
     };
   }
 
+  // Ids already posted. wa-js can fire for the same message twice, so this keeps each message to one post.
+  const posted = new Set();
+
+  function postOnce(message) {
+    if (!message || posted.has(message.id)) return;
+    posted.add(message.id);
+    post({ type: 'message', message });
+  }
+
+  // wa-js does not fire chat.new_message again once a ciphertext message is decrypted.
+  // Wait for the text on the model, and re-read the message at 3 s and 10 s as a fallback.
+  function waitForText(m) {
+    const id = m.id?._serialized;
+    const timers = [];
+    let done = false;
+
+    const stop = () => {
+      m.off?.('change:type', onChange);
+      m.off?.('change:body', onChange);
+    };
+    // Post once, then drop the listeners and the pending re-reads.
+    const finish = (message) => {
+      if (done) return;
+      done = true;
+      stop();
+      timers.forEach(clearTimeout);
+      postOnce(message);
+    };
+    const check = (model) => {
+      const message = toMessage(model);
+      if (message) finish(message);
+    };
+    const onChange = () => check(m);
+    const reread = async () => {
+      try {
+        const fresh = await WPP.chat.getMessageById(id);
+        if (fresh) check(fresh);
+      } catch (err) {
+        console.warn('wawatch: message re-read failed', err);
+      }
+    };
+
+    m.on?.('change:type', onChange);
+    m.on?.('change:body', onChange);
+    timers.push(setTimeout(reread, 3000));
+    // At 10 s, make the last re-read, then stop listening even if the text never came.
+    timers.push(setTimeout(() => { reread(); stop(); }, 10000));
+  }
+
   // WPP.chat.list() is async in wa-js 4.x.
   async function listChats() {
     return (await WPP.chat.list()).map((c) => ({ id: c.id._serialized, name: c.formattedTitle || c.name || c.id._serialized }));
@@ -42,7 +91,8 @@
     postChats();
     WPP.on('chat.new_message', (m) => {
       const message = toMessage(m);
-      if (message) post({ type: 'message', message });
+      if (message) postOnce(message);
+      else if (m.type === 'ciphertext') waitForText(m);
     });
   });
 
