@@ -68,6 +68,21 @@ describe('extension chat list', () => {
     expect(ws.sent).toEqual([{ type: 'chats', chats }]);
   });
 
+  it('ignores a resync that comes before WPP is ready', async () => {
+    let calls = 0;
+    const ext = loadExtension(async () => {
+      calls++;
+      return [chat];
+    });
+    await tick();
+    const ws = ext.sockets[0];
+    ws.readyState = 1;
+    ws.onopen!(); // resync before WPP is ready: no chat list call
+    await tick();
+    expect(calls).toBe(0);
+    expect(ws.sent).toEqual([]);
+  });
+
   it('posts nothing when the chat list rejects', async () => {
     const ext = loadExtension(async () => {
       throw new Error('not loaded');
