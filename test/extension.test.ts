@@ -114,6 +114,26 @@ describe('extension messages', () => {
     ]);
   });
 
+  it('sends messages that arrived while the hub socket was closed once it opens', async () => {
+    const ext = loadExtension(async () => []);
+    ext.ready();
+    await tick();
+    const ws = ext.sockets[0];
+    ext.emit('chat.new_message', msg(false)); // socket not open yet
+    expect(ws.sent).toEqual([]);
+    ws.readyState = 1;
+    ws.onopen!();
+    await tick();
+    expect(ws.sent).toContainEqual({
+      type: 'message',
+      message: { id: 'k1', chatId: '111@s.whatsapp.net', sender: 'Alice', fromMe: false, text: 'hi', timestamp: 1700000000000 },
+    });
+    ws.sent.length = 0;
+    ws.onopen!(); // a second open does not send it again
+    await tick();
+    expect(ws.sent.filter((m) => (m as { type: string }).type === 'message')).toEqual([]);
+  });
+
   it('skips the ciphertext emit that precedes a decrypted message', async () => {
     const ext = loadExtension(async () => []);
     await tick();
